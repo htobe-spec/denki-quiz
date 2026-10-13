@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>制御部 電気クイズ大会</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --panel:#D6D5CB;      /* 制御盤の扉色 */
+    --panel-dark:#BDBCB1;
+    --ink:#1F2328;
+    --plate:#2B2F35;      /* 銘板 */
+    --plate-ink:#F2F1EA;
+    --green:#2E9E4F;
+    --red:#C93A32;
+    --amber:#E3A21A;
+    --off:#8D8C84;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--panel);
+    color:var(--ink);
+    font-family:"BIZ UDPGothic","Hiragino Sans","Meiryo",sans-serif;
+    display:flex;flex-direction:column;min-height:100vh;
+  }
+  .screen{display:none;flex:1;flex-direction:column;padding:2.5vh 4vw;gap:2.5vh;max-width:1400px;width:100%;margin:0 auto}
+  .screen.active{display:flex}
+
+  /* 進行ランプ */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:2vw;flex-wrap:wrap}
+  .qno{font-size:clamp(20px,2.4vw,34px);font-weight:700}
+  .lamps{display:flex;gap:6px;flex-wrap:wrap}
+  .lamp{width:16px;height:16px;border-radius:50%;background:var(--off);border:2px solid #6f6e67}
+  .lamp.done{background:var(--green)}
+  .lamp.now{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+  .timer{font-size:clamp(20px,2.4vw,34px);font-weight:700;min-width:4em;text-align:right;font-variant-numeric:tabular-nums}
+  .timer.low{color:var(--red)}
+
+  /* 問題の銘板 */
+  .plate{
+    background:var(--plate);color:var(--plate-ink);
+    border-radius:6px;padding:3.5vh 3vw;
+    font-size:clamp(24px,3.2vw,48px);font-weight:700;line-height:1.5;
+    border:4px solid #14171a;
+    position:relative;
+  }
+  .plate::before,.plate::after{
+    content:"";position:absolute;top:12px;width:10px;height:10px;border-radius:50%;background:#7c7f84;
+  }
+  .plate::before{left:12px}.plate::after{right:12px}
+
+  /* 選択肢＝押しボタン */
+  .choices{display:grid;grid-template-columns:1fr 1fr;gap:2vh 2vw;flex:1}
+  .choice{
+    display:flex;align-items:center;gap:1.5vw;
+    background:#ECEBE4;border:3px solid var(--panel-dark);border-radius:10px;
+    padding:2vh 1.5vw;font-size:clamp(20px,2.6vw,40px);line-height:1.35;
+    transition:background .25s,border-color .25s,opacity .25s;
+  }
+  .btn-face{
+    flex:none;width:clamp(48px,5vw,76px);height:clamp(48px,5vw,76px);border-radius:50%;
+    display:grid;place-items:center;font-weight:700;color:#fff;
+    border:4px solid rgba(0,0,0,.25);
+  }
+  .c0 .btn-face{background:#2F6FB5}.c1 .btn-face{background:var(--red)}
+  .c2 .btn-face{background:var(--green)}.c3 .btn-face{background:var(--amber);color:var(--ink)}
+  .reveal .choice{opacity:.35}
+  .reveal .choice.correct{opacity:1;background:#E3F4E7;border-color:var(--green);box-shadow:0 0 0 4px var(--green)}
+
+  /* 解説 */
+  .explain{
+    display:none;background:#FFFFFF;border-left:10px solid var(--green);border-radius:6px;
+    padding:2vh 2vw;font-size:clamp(18px,2vw,30px);line-height:1.6
+  }
+  .reveal .explain{display:block}
+
+  .controls{display:flex;gap:1.5vw;justify-content:flex-end;flex-wrap:wrap}
+  button.op{
+    font-family:inherit;font-size:clamp(16px,1.7vw,24px);font-weight:700;
+    padding:1.2vh 2vw;border-radius:8px;border:3px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer
+  }
+  button.op.main{background:var(--ink);color:#fff}
+  button.op:focus-visible{outline:4px solid var(--amber);outline-offset:3px}
+  .hint{font-size:14px;color:#55544d;text-align:right}
+
+  /* スタート・終了画面 */
+  .center{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:3vh}
+  .title{font-size:clamp(40px,7vw,110px);font-weight:700;line-height:1.15;margin:0}
+  .sub{font-size:clamp(18px,2.2vw,32px);margin:0;max-width:40em;line-height:1.6}
+  .startlamp{display:flex;gap:14px}
+  .startlamp span{width:34px;height:34px;border-radius:50%;border:3px solid rgba(0,0,0,.3)}
+  .answers{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;width:100%}
+  .ans{background:#fff;border-radius:6px;padding:10px 14px;font-size:clamp(16px,1.8vw,24px);font-weight:700}
+
+
+  .choice{cursor:pointer}
+  .choice:hover{border-color:#7d7c73}
+  .choice.selected{border-color:var(--ink);box-shadow:0 0 0 4px var(--ink);background:#fff}
+  .reveal .choice{cursor:default}
+  .reveal .choice.selected.wrong{opacity:1;background:#F8E1DF;border-color:var(--red);box-shadow:0 0 0 4px var(--red)}
+  .mark{margin-left:auto;font-size:clamp(28px,3.4vw,52px);font-weight:700}
+  .explain.ng{border-left-color:var(--red)}
+  .result-big{font-size:clamp(32px,5vw,72px);font-weight:700;margin:0}
+  .cats{display:flex;gap:2vw;flex-wrap:wrap;font-size:clamp(16px,1.8vw,24px)}
+  .cats span{background:#fff;border-radius:6px;padding:8px 14px}
+  table.sheet{width:100%;border-collapse:collapse;background:#fff;font-size:clamp(14px,1.4vw,19px)}
+  .sheet th,.sheet td{border:1px solid #9a998f;padding:8px 10px;text-align:left;vertical-align:top}
+  .sheet th{background:var(--plate);color:var(--plate-ink)}
+  .sheet td.j{text-align:center;font-weight:700;font-size:1.3em;width:3.5em}
+  .sheet td.ok{color:var(--green)} .sheet td.ng{color:var(--red)}
+  .sheet tr.ngrow{background:#FBEDEC}
+  #end .center{justify-content:flex-start;padding-bottom:4vh}
+  @media print{.controls,.hint,#end button{display:none}body{background:#fff}}
+  @media (max-width:700px){
+    .choices{grid-template-columns:1fr}
+    .hint{display:none}
+    .screen{padding:16px 14px;gap:14px}
+    .plate{padding:22px 18px 18px}
+    .choice{padding:12px 12px;gap:12px}
+    .controls button.op{flex:1;padding:14px 10px}
+    .sheet th:nth-child(2),.sheet td:nth-child(2){display:none}
+    .lamp{width:11px;height:11px}
+  }
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- スタート画面 -->
+<section class="screen active" id="start">
+  <div class="center">
+    <div class="startlamp">
+      <span style="background:#2F6FB5"></span><span style="background:var(--red)"></span>
+      <span style="background:var(--green)"></span><span style="background:var(--amber)"></span>
+    </div>
+    <h1 class="title">制御部<br>電気クイズ大会</h1>
+    <p class="sub">全25問・4択。品質（制御盤の不具合）を中心に、電気回路・ハード設計・ソフト設計からも出題します。答えをクリックして選んでください。</p>
+    <label class="sub" style="font-size:20px">名前（必須）：<input type="text" id="pname" style="font-size:20px;width:10em" placeholder="例：戸部"></label>
+    <label class="sub" style="font-size:20px">
+      <input type="checkbox" id="useTimer" checked> 1問ごとに制限時間をつける
+      （<input type="number" id="sec" value="30" min="5" max="120" style="width:4em;font-size:18px">秒）
+    </label>
+    <div class="controls" style="justify-content:flex-start">
+      <button class="op main" id="startBtn">クイズを始める</button>
+    </div>
+  </div>
+</section>
+
+<!-- 問題画面 -->
+<section class="screen" id="quiz">
+  <div class="topbar">
+    <div class="qno" id="qno"></div>
+    <div class="lamps" id="lamps"></div>
+    <div class="timer" id="timer"></div>
+  </div>
+  <div class="plate" id="question"></div>
+  <div class="choices" id="choices"></div>
+  <div class="explain" id="explain"></div>
+  <div class="controls">
+    <button class="op" id="prevBtn">前の問題</button>
+    <button class="op main" id="nextBtn">答えを表示</button>
+  </div>
+  <div class="hint">操作：答えをクリック（またはキーボードの1〜4）で選ぶ → スペースキーで「答えを表示 → 次の問題」／ ← で前の問題</div>
+</section>
+
+<!-- 終了画面 -->
+<section class="screen" id="end">
+  <div class="center">
+    <h1 class="title" style="font-size:clamp(32px,5vw,70px)" id="endTitle">正誤表</h1>
+    <p class="result-big" id="score"></p>
+    <div class="cats" id="cats"></div>
+    <div id="sendStatus" class="sub" style="font-size:20px"></div>
+    <button class="op main" id="resendBtn" style="display:none">もう一度送信する</button>
+    <table class="sheet">
+      <thead><tr><th>問</th><th>分野</th><th>問題</th><th>あなたの答え</th><th>正解</th><th>判定</th></tr></thead>
+      <tbody id="sheet"></tbody>
+    </table>
+    <div class="controls" style="justify-content:flex-start">
+      <button class="op" id="printBtn">正誤表を印刷</button>
+      <button class="op main" id="againBtn">最初に戻る</button>
+    </div>
+  </div>
+</section>
+
+<script>
+const Q = [
+ {"t":"電気回路","q":"DC24Vのリレーコイルに、ダイオードを並列に入れる目的は？","c":["コイルの動作を速くする","電圧を上げる","コイルを切ったときに出る逆起電力（サージ）を吸収する","消費電力を減らす"],"a":2,"e":"コイルの電気を切ると、一瞬だけ高い電圧（サージ）が出ます。ダイオードでそれを逃がして、PLCの出力やスイッチを守ります。"},
+ {"t":"電気回路","q":"NPN出力のセンサーをPLCにつなぐとき、PLC入力のコモンはどこにつなぐ？","c":["+24V","AC100V","0V","どこにもつながない"],"a":0,"e":"NPNセンサーはONのとき0V側に電流を引き込みます。そのためPLC入力のコモンは+24V側（プラスコモン）にします。"},
+ {"t":"電気回路","q":"安全回路に使う「強制ガイド式リレー」の特徴は？","c":["コイルが2つある","a接点とb接点が機械的につながっていて、同時に閉じない","電圧がかからなくても動く","接点が絶対に溶着しない"],"a":1,"e":"a接点が溶着（くっついて離れない状態）しても、b接点が閉じないしくみです。b接点を監視すれば故障に気づけます。"},
+ {"t":"ハード設計","q":"非常停止ボタンに「b接点」を使う理由は？","c":["部品が安いから","a接点は存在しないから","ボタンが軽く押せるから","配線が断線したときも、機械が止まる側になるから"],"a":3,"e":"b接点なら、線が切れても「押されたのと同じ状態（停止）」になります。故障しても安全側に倒れる「フェールセーフ」の考え方です。"},
+ {"t":"ソフト設計","q":"三菱PLCで、同じ出力Y0のコイルを2か所に書いてしまった（二重コイル）。どうなる？","c":["エラーで必ず停止する","あとに書いた方の結果が出力される","先に書いた方が優先される","2つの結果が足し算される"],"a":1,"e":"プログラムは上から順に実行され、最後の結果が出力されます。前の行が無視されたように見えるので、バグの原因になります。"},
+ {"t":"品質","q":"制御盤で多い電気的な不具合のひとつは？","c":["塗装のはがれ","ラベルの汚れ","扉のキズ","端子ネジの締め付け不良"],"a":3,"e":"ネジがゆるむと電気が通りにくくなり（接触抵抗が増える）、発熱や焼損、設備停止の原因になります。振動のある設備では特に注意します。【品質ポイント】定期的に増し締め点検をする"},
+ {"t":"品質","q":"電線に圧着端子をつけるとき、正しいやり方は？","c":["端子に合った専用の圧着工具で圧着し、軽く引っぱって抜けないか確認する","ペンチでしっかりつぶす","はんだだけで固定する","テープで巻いて固定する"],"a":0,"e":"圧着が不十分だと、あとから抜けたり発熱したりします。見た目だけでは分かりにくい不良です。【品質ポイント】正しい工具を使い、引っぱり確認までする"},
+ {"t":"品質","q":"1つの端子に複数の電線をつなぐ（共締め）ときのルールは？","c":["何本でもOK","太い線と細い線を必ず混ぜる","メーカーが決めた本数を超えてつながない","ネジをゆるめにしておく"],"a":2,"e":"本数が多すぎると、締め付けが不十分になり、ゆるみや発熱の原因になります。【品質ポイント】端子の仕様（本数・電線の太さ）を守る"},
+ {"t":"品質","q":"電線に線番（マークチューブ）をつける一番の目的は？","c":["保全や不具合調査のときに、誤配線や調査ミスを防ぐ","電線を長持ちさせる","見た目をきれいにする","電気を流れやすくする"],"a":0,"e":"線番がないと、図面とどの線が対応しているか分からず、調査に時間がかかったり、まちがった線を外したりします。【品質ポイント】線番は図面と必ず一致させる"},
+ {"t":"品質","q":"制御盤の出荷前、盤内に電線の被覆くずやネジが落ちていた。何が問題？","c":["見た目が悪いだけで問題はない","問題はなく、お客様が掃除する","重くなる","ショート（短絡）や誤動作の原因になる"],"a":3,"e":"金属くずが端子の間に入ると、ショートや誤動作につながります。輸送中の振動で動くこともあります。【品質ポイント】出荷前に盤内清掃と異物確認をする"},
+ {"t":"品質","q":"配線作業のあとの配線チェック。品質を上げるために良いやり方は？","c":["作業した本人が見た目だけで確認する","図面をもとに、作業者とは別の人もチェックする（ダブルチェック）","チェックはしない","動けばOKとする"],"a":1,"e":"作業した本人は思い込みでまちがいに気づきにくいものです。図面と照らし合わせ、別の目で確認すると見落としが減ります。【品質ポイント】図面との照合とダブルチェックを行う"},
+ {"t":"品質","q":"制御盤の換気ファンのフィルターが目詰まりしていた。何が起こりやすい？","c":["ノイズが減る","電気代が安くなる","盤内の温度が上がり、機器の寿命が縮んだり誤動作したりする","何も起こらない"],"a":2,"e":"PLCやインバータは熱に弱く、温度が高いと故障や誤動作が増えます。【品質ポイント】フィルター清掃・交換を点検項目に入れる"},
+ {"t":"品質","q":"運転中の制御盤で、端子のゆるみや異常な発熱を早く見つける方法は？","c":["手で端子をさわって確かめる","においがするまで待つ","年に1回、目で見るだけ","放射温度計やサーモグラフィで温度を点検する"],"a":3,"e":"ゆるんだ端子は熱を持ちます。温度を測ると、焼損する前に見つけられます。運転中に端子をさわるのは感電の危険があります。【品質ポイント】温度点検で異常を早期発見する"},
+ {"t":"品質","q":"インバータの近くで、PLCのアナログ値がふらつく。正しい対策は？","c":["動力線と信号線を同じダクトにまとめる","動力線と信号線を分けて配線し、シールド線を使って正しく接地する","アースを外す","信号線をインバータの配線に密着させる"],"a":1,"e":"インバータからはノイズが出ます。弱い信号線は動力線から離し、シールドと接地でノイズから守ります。【品質ポイント】信号線と動力線は分離配線する"},
+ {"t":"品質","q":"近接センサーが誤検知をくり返す。センサーを交換する前にやるべきことは？","c":["感度設定・取り付け位置・ノイズの影響を調べる","すぐ同じ型番に交換する","別のメーカーに変える","センサーを外して運転する"],"a":0,"e":"誤検知の原因は部品の故障だけでなく、調整不良や取り付けのずれも多いです。交換しても直らないことがあります。【品質ポイント】交換の前に原因を分析する"},
+ {"t":"品質","q":"PLCの入力がONにならない。最初にとるべき行動は？","c":["すぐにPLCを新品に交換する","センサーが悪いと決めて交換する","入力ランプ・電圧・配線を順番に確認して原因をしぼる","プログラムを書き直す"],"a":2,"e":"原因はセンサー・断線・電源など何通りもあります。決めつけて部品を替えると、本当の原因が残ったままになります。【品質ポイント】原因を決めつけず、順番に切り分けて調べる"},
+ {"t":"品質","q":"PLCのプログラムを変更した。変更後に必ずやるべきことは？","c":["動いているので何もしない","動作確認をして、変更内容と日付を記録に残す","古いプログラムは消しておく","口頭で伝えるだけにする"],"a":1,"e":"変更したところ以外に影響が出ることがあります。記録がないと、あとで不具合が出たときに原因を追えません。【品質ポイント】動作確認と変更履歴の管理をセットで行う"},
+ {"t":"品質","q":"制御盤の配線を改造した。作業のあと必ずやるべきことは？","c":["盤の外側を清掃する","盤内の写真を撮るだけ","次の部品を発注する","図面と仕様書を現場に合わせて更新する"],"a":3,"e":"図面が現場と合っていないと、次に作業する人が誤配線や誤った保全をしてしまいます。【品質ポイント】図面の更新までふくめて「改造完了」とする（変更管理）"},
+ {"t":"品質","q":"工程仕様書や図面を使って作業を始める前に、確認すべきことは？","c":["紙がきれいかどうか","ページ数が多いかどうか","最新版（改訂番号）かどうか","だれが印刷したか"],"a":2,"e":"古い版を使うと、すでに変わった内容で作業してしまい、手戻りや不良の再発につながります。【品質ポイント】最新版で管理し、使う前に版を確認する"},
+ {"t":"品質","q":"非常停止回路の点検として正しいものは？","c":["実際に押して、設備が確実に止まることを確認する","ボタンがついているか目で見るだけ","ふだんは点検しない","ランプがつけばOK"],"a":0,"e":"非常停止は作業者の安全を守る最後の手段です。見た目が正常でも、接点や配線の不良で止まらないことがあります。【品質ポイント】安全回路は実際に動かして定期点検する"},
+ {"t":"品質","q":"トレーサビリティ（記録をたどれるしくみ）の目的は？","c":["生産スピードを上げる","電気代を減らす","部品の数を減らす","不良が出たとき、どの製品・どの工程が関係するかを追跡できるようにする"],"a":3,"e":"記録があれば、不良の影響範囲（どのロットか、いつ作ったか）をすぐに特定できます。【品質ポイント】記録を正しく残す"},
+ {"t":"品質","q":"不具合が起きたときの報告で、一番大切なことは？","c":["自分の考えだけを書く","いつ・どこで・何が・どうなったかを、事実として正確に記録する","大きな問題でなければ報告しない","直ったら記録はいらない"],"a":1,"e":"事実が正確に残っていないと、原因調査も再発防止もできません。【品質ポイント】5W1Hで事実を記録する"},
+ {"t":"品質","q":"ある設備で不具合を直した。同じ設計の設備がほかにもある。次にやるべきことは？","c":["ほかの設備でも同じ不具合が起きないか確認し、対策を広げる（水平展開）","直したので終わり","ほかの設備は不具合が出てから直す","設計者に任せて何もしない"],"a":0,"e":"同じ設計なら、同じ不具合がほかの設備でも起きる可能性があります。【品質ポイント】対策は水平展開して、ほかでの発生を防ぐ"},
+ {"t":"品質","q":"制御盤内のリレー。接点の寿命を縮める主な原因と、正しい扱い方は？","c":["ON/OFFが少ないことが原因。使うほど長持ちする","清掃が原因。さわらないほうがよい","頻繁なON/OFFが原因。消耗品として計画的に交換する","寿命はないので交換不要"],"a":2,"e":"接点が開いたり閉じたりするたびに小さな火花（アーク）が出て、少しずつけずれていきます。【品質ポイント】リレーは消耗品として計画交換する"},
+ {"t":"品質","q":"同じ制御盤の不具合が何度もくり返し起きる。再発防止で一番大事なことは？","c":["担当者に注意する","「なぜ？」をくり返して真因（本当の原因）を見つける","とりあえず設備ごと新しくする","報告書だけ作っておく"],"a":1,"e":"表面の原因だけを直しても、本当の原因が残っていれば同じ不具合がまた起きます。【品質ポイント】「なぜ」を5回くり返して真因を追究する"}
+];
+
+const L = ["A","B","C","D"];
+let i = 0, tId = null, remain = 0;
+let picks = [], shown = [];
+const $ = id => document.getElementById(id);
+const esc = t => String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function show(id){
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  $(id).classList.add("active");
+  window.scrollTo(0,0);
+}
+
+function render(){
+  const d = Q[i];
+  $("qno").textContent = `第${i+1}問 / ${Q.length}　【${d.t}】`;
+  $("lamps").innerHTML = Q.map((_,k)=>`<span class="lamp ${k<i?'done':k===i?'now':''}"></span>`).join("");
+  $("question").textContent = d.q;
+  $("choices").innerHTML = d.c.map((t,k)=>
+    `<div class="choice c${k}" data-k="${k}" role="button" tabindex="0"><span class="btn-face">${L[k]}</span><span>${esc(t)}</span><span class="mark"></span></div>`).join("");
+  document.querySelectorAll(".choice").forEach(el=>{
+    el.onclick = ()=>pick(+el.dataset.k);
+    el.onkeydown = e=>{ if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); pick(+el.dataset.k);} };
+  });
+  $("prevBtn").disabled = i===0;
+  paint();
+  if(shown[i]){ clearInterval(tId); $("timer").textContent=""; } else startTimer();
+}
+
+function paint(){
+  const d = Q[i], p = picks[i], rev = !!shown[i];
+  $("quiz").classList.toggle("reveal", rev);
+  document.querySelectorAll(".choice").forEach(el=>{
+    const k = +el.dataset.k;
+    el.classList.toggle("selected", p===k);
+    el.classList.toggle("correct", rev && k===d.a);
+    el.classList.toggle("wrong", rev && p===k && k!==d.a);
+    el.querySelector(".mark").textContent = rev ? (k===d.a ? "○" : (p===k ? "×" : "")) : "";
+  });
+  if(rev){
+    const ok = p===d.a;
+    const head = p==null ? "未回答" : ok ? "正解！" : `不正解（あなたの答え：${L[p]}）`;
+    $("explain").className = "explain" + (ok ? "" : " ng");
+    $("explain").innerHTML = `<b>${head}　正解は ${L[d.a]}「${esc(d.c[d.a])}」</b><br>${esc(d.e)}`;
+    $("nextBtn").textContent = i===Q.length-1 ? "正誤表を見る" : "次の問題";
+  }else{
+    $("nextBtn").textContent = "答えを表示";
+  }
+}
+
+function pick(k){
+  if(shown[i]) return;
+  picks[i] = k;
+  paint();
+}
+
+function startTimer(){
+  clearInterval(tId);
+  $("timer").classList.remove("low");
+  if(!$("useTimer").checked){ $("timer").textContent=""; return; }
+  remain = Math.max(5, parseInt($("sec").value)||30);
+  $("timer").textContent = `残り ${remain}秒`;
+  tId = setInterval(()=>{
+    remain--;
+    $("timer").textContent = remain>0 ? `残り ${remain}秒` : "時間切れ";
+    if(remain<=5) $("timer").classList.add("low");
+    if(remain<=0) clearInterval(tId);
+  },1000);
+}
+
+function next(){
+  if(!shown[i]){
+    shown[i] = true;
+    clearInterval(tId);
+    $("timer").textContent = "";
+    paint();
+    return;
+  }
+  if(i<Q.length-1){ i++; render(); }
+  else finish();
+}
+
+function prev(){ if(i>0){ i--; render(); } }
+
+function finish(){
+  clearInterval(tId);
+  const name = $("pname").value.trim();
+  $("endTitle").textContent = name ? `${name} さんの正誤表` : "正誤表";
+  let total = 0; const cat = {};
+  $("sheet").innerHTML = Q.map((d,k)=>{
+    const p = picks[k], ok = p===d.a;
+    if(ok) total++;
+    cat[d.t] = cat[d.t] || {ok:0,n:0}; cat[d.t].n++; if(ok) cat[d.t].ok++;
+    const yours = p==null ? "未回答" : `${L[p]}　${esc(d.c[p])}`;
+    return `<tr class="${ok?'':'ngrow'}"><td>${k+1}</td><td>${d.t}</td><td>${esc(d.q)}</td>
+      <td>${yours}</td><td>${L[d.a]}　${esc(d.c[d.a])}</td>
+      <td class="j ${ok?'ok':'ng'}">${ok?'○':'×'}</td></tr>`;
+  }).join("");
+  $("score").textContent = `${Q.length}問中 ${total}問 正解`;
+  $("cats").innerHTML = Object.entries(cat).map(([t,v])=>`<span>${t}：${v.ok} / ${v.n}</span>`).join("");
+  show("end");
+  sendResult();
+}
+
+$("startBtn").onclick = ()=>{ if(!$("pname").value.trim()){ alert("名前を入力してください"); $("pname").focus(); return; } sent=false; i=0; picks=[]; shown=[]; show("quiz"); render(); document.activeElement && document.activeElement.blur(); };
+$("nextBtn").onclick = next;
+$("prevBtn").onclick = prev;
+$("againBtn").onclick = ()=>{ $("pname").value=""; show("start"); };
+$("printBtn").onclick = ()=>window.print();
+
+
+
+// ===== 結果の回収 =====
+// Google Apps Script の「ウェブアプリURL」を "" の中に貼りつけてください
+const RESULT_URL = "https://script.google.com/macros/s/AKfycbzPb2CuuDxib6YMQ64Gdb9JyUvX1Nuus94J_t3r0YZnLc8ReS7eUP6S0rigcGkP23zZ-g/exec";
+let sent = false;
+
+function buildResult(){
+  const name = $("pname").value.trim();
+  let total = 0; const cat = {};
+  const marks = Q.map((d,k)=>{
+    const ok = picks[k]===d.a; if(ok) total++;
+    cat[d.t] = cat[d.t] || {ok:0,n:0}; cat[d.t].n++; if(ok) cat[d.t].ok++;
+    return picks[k]==null ? "未" : (ok ? "○" : "×");
+  });
+  const cats = Object.keys(cat);
+  return {
+    header: ["日時","名前","点数"].concat(cats).concat(Q.map((_,k)=>"Q"+(k+1))),
+    row: [name, total].concat(cats.map(c=>cat[c].ok)).concat(marks)
+  };
+}
+
+function sendResult(){
+  if(!RESULT_URL){ $("sendStatus").textContent = "（結果の送信先が未設定のため、送信していません）"; return; }
+  if(sent) return;
+  $("sendStatus").textContent = "結果を送信しています…";
+  $("resendBtn").style.display = "none";
+  fetch(RESULT_URL, {method:"POST", mode:"no-cors",
+    headers:{"Content-Type":"text/plain;charset=utf-8"},
+    body: JSON.stringify(buildResult())})
+  .then(()=>{ sent = true; $("sendStatus").textContent = "✓ 結果を送信しました。おつかれさまでした！"; })
+  .catch(()=>{ $("sendStatus").textContent = "送信できませんでした。通信状態を確認して、もう一度送信してください。";
+               $("resendBtn").style.display = ""; });
+}
+$("resendBtn").onclick = sendResult;
+
+// ボタンにフォーカスがあるときのスペースキー二重反応を防ぐ
+document.addEventListener("keyup", e=>{
+  if(e.code==="Space" && e.target.tagName==="BUTTON" && $("quiz").classList.contains("active")) e.preventDefault();
+});
+document.addEventListener("keydown", e=>{
+  if(!$("quiz").classList.contains("active")) return;
+  if(["1","2","3","4"].includes(e.key)){ pick(+e.key-1); return; }
+  const up = e.key.toUpperCase();
+  if(L.includes(up) && e.target.tagName!=="INPUT"){ pick(L.indexOf(up)); return; }
+  if(e.code==="Space"||e.code==="ArrowRight"){ e.preventDefault(); next(); }
+  if(e.code==="Enter" && !e.target.classList.contains("choice")){ e.preventDefault(); next(); }
+  if(e.code==="ArrowLeft"){ e.preventDefault(); prev(); }
+});
+</script>
+</body>
+</html>
